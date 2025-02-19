@@ -5,6 +5,13 @@ from tqdm import tqdm
 
 import numpy as np
 
+binning={
+    "ele_pt"   : np.linspace(0,30,60),
+    "scl_eta"  : np.linspace(-2.5, 2.5, 50),
+    "ele_isEB" : 100,
+    "ele_isEE" : 100
+}
+
 def get_df(root_file_name, unnecessary_columns):
     rootFile = uproot.open(root_file_name)
     #if len(rootFile.allkeys())==0: return pd.DataFrame()
@@ -29,12 +36,12 @@ def plot_electrons(df, column, bins, logscale=False, ax=None, title=None):
 def plotting(df, branch, output):
     import matplotlib.pyplot as plt
     import mplhep
-
+    
+    if branch in binning.keys(): bins=binning[branch]
+    else: bins=100
     fig, axes = plt.subplots(1,1, figsize=(5,5))
-    plot_electrons(df, branch, np.linspace(0, 30, 60), ax=axes)
-    #plot_electrons(df, "scl_eta", np.linspace(-2.5,2.5,50), ax=axes[1])
+    plot_electrons(df, branch, bins, ax=axes)
     plt.savefig(output+'/'+branch+'.png')
-
 
 def main():
     import argparse
@@ -58,7 +65,7 @@ def main():
     df = df.query("matchedToGenEle != 2")
 
     #can combine unmatched (0) and non-prompt (3) (maybe want to be agnostic here?)
-    #df.loc[df["matchedToGenEle"] != 1, "matchedToGenEle"] = 0
+    df.loc[df["matchedToGenEle"] > 0, "matchedToGenEle"] = 1
 
     #drop electrons outside detector acceptance
     df = df.query("abs(scl_eta) < 2.5")
