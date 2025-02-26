@@ -81,13 +81,29 @@ def main():
     df = df.query("ele_pt >= 1")
 
     #list of features to be used
-    features = ["ele_oldsigmaietaieta", "ele_oldsigmaiphiiphi", "ele_oldcircularity",
-                "ele_oldr9", "ele_scletawidth", "ele_sclphiwidth", "ele_oldhe",
-                "ele_kfhits", "ele_kfchi2", "ele_gsfchi2", "ele_fbrem", "ele_gsfhits",
-                "ele_expected_inner_hits", "ele_conversionVertexFitProbability",
-                "ele_ep", "ele_eelepout", "ele_IoEmIop", "ele_deltaetain",
-                "ele_deltaphiin", "ele_deltaetaseed", "rho", "ele_pfPhotonIso",
-                "ele_pfChargedHadIso", "ele_pfNeutralHadIso"]
+    #FIXME need to get: 
+    # trk_nhits
+    # trk_chi2red 
+    # gsf_nhits (possibly 'ele_gsfhits'?)
+    # match eclu_EoverP (possibly 'ele_IoEmIop'?)
+    # trk_p
+    # gsf_mode_p
+    # core_shFracHits
+    # gsf_bdtout1
+    # gsf_dr
+    # trk_dr
+    # sc_clus1_nxtal
+    # sc_clus1_dphi
+    # sc_clus2_dphi
+    # sc_clus1_deta
+    # sc_clus2_deta
+    # sc_clus1_E
+    # sc_clus2_E
+    # sc_clus1_E_ov_p
+    # sc_clus2_E_ov_p
+    features = ["rho", "scl_eta", "ele_oldr9", "ele_scletawidth", "ele_sclphiwidth", "ele_oldhe",
+                "ele_gsfchi2", "ele_fbrem", "ele_ep", "ele_deltaetain", "ele_deltaphiin",
+                "ele_deltaetaseed", "scl_E", "ele_sclNclus"]
     
     #plot histograms with distributions for signal and background electrons
     if args.debug: 
@@ -95,7 +111,7 @@ def main():
             if df[feature].dtype is bool: continue
             plotting(df, feature, args.output, args.debug)
     
-    n_boost_rounds = 10
+    n_boost_rounds = 50
     xgboost_params = {'eval_metric' : 'auc',
                       'objective'   : 'binary:logitraw'}
 
