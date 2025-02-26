@@ -6,10 +6,17 @@ import mplhep
 
 from sklearn.metrics import roc_curve, auc
 
-def plotROC(fpr, tpr, auc, output=''):
+def getROCs(isObj, scores):
+    fpr, tpr, thresh = roc_curve(isObj, scores)
+    roc_auc = auc(fpr,tpr)
+    return fpr, tpr, roc_auc
+
+def plotROCs(fprs, tprs, aucs, output, labels=[]):
     plt.figure(figsize=(8,6))
-    plt.plot(fpr, tpr, color='blue', lw=2, label=f"ROC curve (AUC = {auc:.2f})")
     plt.plot([0,1],[0,1], color='gray', linestyle='--') #random guess line
+    for idx,fpr in enumerate(fprs):
+        plt.plot(fprs[idx], tprs[idx], lw=2, label=f"ROC {labels[idx]} (AUC = {aucs[idx]:.2f})")
+
     plt.xlim([0,1])
     plt.ylim([0,1.05])
     plt.xlabel('False Positive Rate')
@@ -17,7 +24,7 @@ def plotROC(fpr, tpr, auc, output=''):
     plt.legend(loc='lower right')
     plt.grid()
     plt.savefig(output+'/roc.png')
-
+    
 def main():
     import argparse
     p=argparse.ArgumentParser(description="make ROC curves from input ntuple")
@@ -41,10 +48,9 @@ def main():
     isEle = np.array(isEle)
     bdtScores_run2 = np.array(bdtScores_run2)
 
-    fpr, tpr, _ = roc_curve(isEle, bdtScores_run2)
-    roc_auc     = auc(fpr, tpr)
+    fpr, tpr, roc_auc = getROCs(isEle, bdtScores_run2)
 
-    plotROC(fpr, tpr, roc_auc, args.output)
+    plotROCs([fpr], [tpr], [roc_auc], args.output)
 
 if __name__=="__main__": main()
     

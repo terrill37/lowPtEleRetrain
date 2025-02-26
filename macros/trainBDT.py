@@ -3,13 +3,19 @@ import glob
 import pandas as pd
 from tqdm import tqdm
 
+from sklearn.model_selection import train_test_split
+import xgboost as xgb
+import xgboost2tmva
+
 import numpy as np
+
+import ROC
 
 binning={
     "ele_pt"   : np.linspace(0,30,60),
     "scl_eta"  : np.linspace(-2.5, 2.5, 50),
-    "ele_isEB" : 100,
-    "ele_isEE" : 100
+    "ele_isEB" : 2,
+    "ele_isEE" : 2
 }
 
 def get_df(root_file_name, unnecessary_columns):
@@ -33,10 +39,11 @@ def plot_electrons(df, column, bins, logscale=False, ax=None, title=None):
     ax.set_title(title)
     if logscale: ax.set_yscale("log", nonposy='clip')
 
-def plotting(df, branch, output):
+def plotting(df, branch, output, debug=False):
     import matplotlib.pyplot as plt
     import mplhep
     
+    if debug: print(branch)
     if branch in binning.keys(): bins=binning[branch]
     else: bins=100
     fig, axes = plt.subplots(1,1, figsize=(5,5))
@@ -52,7 +59,7 @@ def main():
 
     args=p.parse_args()
     
-    unnecessary = ['ele_ID', 'nEvent', 'nRun', 'nLumi']
+    unnecessary = ['nEvent', 'nRun', 'nLumi']
 
     df = pd.concat((get_df(f,unnecessary) for f in tqdm(args.ntupleFiles)), ignore_index=True)
 
@@ -73,11 +80,110 @@ def main():
     #keep electrons with pt >= 1GeV
     df = df.query("ele_pt >= 1")
 
+    #list of features to be used
+    features = ["ele_oldsigmaietaieta", "ele_oldsigmaiphiiphi", "ele_oldcircularity",
+                "ele_oldr9", "ele_scletawidth", "ele_sclphiwidth", "ele_oldhe",
+                "ele_kfhits", "ele_kfchi2", "ele_gsfchi2", "ele_fbrem", "ele_gsfhits",
+                "ele_expected_inner_hits", "ele_conversionVertexFitProbability",
+                "ele_ep", "ele_eelepout", "ele_IoEmIop", "ele_deltaetain",
+                "ele_deltaphiin", "ele_deltaetaseed", "rho", "ele_pfPhotonIso",
+                "ele_pfChargedHadIso", "ele_pfNeutralHadIso"]
+    
     #plot histograms with distributions for signal and background electrons
-    if args.debug:
-        for col in df.columns:
-            plotting(df, col, args.output)
+    if args.debug: 
+        for feature in features:
+            if df[feature].dtype is bool: continue
+            plotting(df, feature, args.output, args.debug)
+    
+    n_boost_rounds = 10
+    xgboost_params = {'eval_metric' : 'auc',
+                      'objective'   : 'binary:logitraw'}
 
+    category_titles = ["EB"]
+
+    #This is where the retraining happens
+    for i, cat in enumerate(category_titles):
+        #get the features (either endcap or barrel)
+        #features = features_EE if 'EE' in category else features_EB
+        #Currently using inclusive training of barrel and endcap
+        
+        #get features from and the target from the data frame
+        X = df[features]
+        Y = df["matchedToGenEle"]
+
+        #split X and Y up into train and test samples
+        X_train,X_test,Y_train,Y_test = train_test_split(X, Y, test_size=0.33, random_state=42)
+
+        idx_train = X_train.index
+        idx_test  = X_test.index
+
+        #XGBoost has its own format, need to create these structures
+        dmatrix_train = xgb.DMatrix(X_train.copy(), label=np.copy(Y_train))
+        dmatrix_test  = xgb.DMatrix(X_test.copy(),  label=np.copy(Y_test))
+
+        #Get the number of positive and negative training examples in this category
+        n_pos = np.sum(Y_train==1)
+        n_neg = np.sum(Y_train==0)
+
+        print(cat+":")
+        print(rf"training on {n_pos} signal and {n_neg} background electrons.")
+
+        #set hyperparameter: scale_pos_weight
+        #corresponds to a weight given to every positive sample
+        #set to n_neg/n_pos for imbalanced datasets to balance total contributions
+        #of the positive and negative classes in the loss function
+        xgboost_params["scale_pos_weight"] = 1. * n_neg/n_pos
+
+        #train the model
+        model = xgb.train(xgboost_params, dmatrix_train,
+                          num_boost_round = n_boost_rounds,
+                          evals=[(dmatrix_train, 'train'),
+                                 (dmatrix_test,  'test')],
+                          early_stopping_rounds=10,
+                          verbose_eval=False)
+        
+        best_iteration = model.best_iteration + 1
+        if best_iteration<n_boost_rounds: 
+            print(f"early stopping after {best_iteration} boosting rounds")
+
+        print("")
+
+        xgboost2tmva.convert_model(model.get_dump(), input_variables=[(f,'F') for f in features],
+                                   output_xml=f'electron_id_{i}.xml')
+        
+        model.save_model(f"electron_id_{i}.bin")
+
+        df.loc[idx_train, "score"] = model.predict(dmatrix_train)
+        df.loc[idx_test,  "score"] = model.predict(dmatrix_test)
+    
+        df["test"] = False
+        df.loc[idx_train, "test"] = False
+        df.loc[idx_test,  "test"] = True
+        
+    #Now make a ROC curve
+    print("now making roc curve")
+    df_train = df.query("not test")
+    df_test  = df.query("test")
+    
+    labels=["train", "test", "Run2"]
+    fprs,tprs,aucs=[],[],[]
+
+    fpr,tpr,roc_auc = ROC.getROCs(isObj=df_train["matchedToGenEle"], scores=df_train["score"])
+    fprs.append(fpr)
+    tprs.append(tpr)
+    aucs.append(roc_auc)
+    
+    fpr,tpr,roc_auc = ROC.getROCs(isObj=df_test["matchedToGenEle"], scores=df_test["score"])
+    fprs.append(fpr)
+    tprs.append(tpr)
+    aucs.append(roc_auc)
+    
+    fpr,tpr,roc_auc = ROC.getROCs(isObj=df["matchedToGenEle"], scores=df["ele_ID"])
+    fprs.append(fpr)
+    tprs.append(tpr)
+    aucs.append(roc_auc)
+    
+    ROC.plotROCs(fprs,tprs,aucs,args.output,labels)
 
 
 if __name__=="__main__": main()
