@@ -11,19 +11,22 @@ def getROCs(isObj, scores):
     roc_auc = auc(fpr,tpr)
     return fpr, tpr, roc_auc
 
-def plotROCs(fprs, tprs, aucs, output, labels=[]):
+def plotROCs(fprs, tprs, aucs, output, labels=[], figName=None):
+    if figName is None: figName='roc'
     plt.figure(figsize=(8,6))
-    plt.plot([0,1],[0,1], color='gray', linestyle='--') #random guess line
+    plt.plot(tprs[0],tprs[0], color='gray', linestyle='--') #random guess line
+    #plt.fill_between(tprs[0], tprs[0], y2=1e-3, alpha=0.3, label='AUC (random guess)')
     for idx,fpr in enumerate(fprs):
-        plt.plot(fprs[idx], tprs[idx], lw=2, label=f"ROC {labels[idx]} (AUC = {aucs[idx]:.2f})")
+        plt.plot(tprs[idx], fprs[idx], lw=2, label=f"ROC {labels[idx]} (AUC = {aucs[idx]:.2f})")
 
-    plt.xlim([0,1])
-    plt.ylim([0,1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.legend(loc='lower right')
+    plt.xlim([0.5,1])
+    plt.ylim([0.01,1.05])
+    plt.xlabel('Signal Efficiency')
+    plt.ylabel('Background Efficiency')
+    plt.legend(loc='upper left')
+    plt.gca().set_yscale('log')
     plt.grid()
-    plt.savefig(output+'/roc.png')
+    plt.savefig(output+'/'+figName+'.png')
     
 def main():
     import argparse
